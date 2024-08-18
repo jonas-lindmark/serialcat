@@ -1,4 +1,4 @@
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 use std::io::ErrorKind::NotFound;
 use std::{thread, time};
 use std::time::Duration;
@@ -32,6 +32,17 @@ fn main() {
 
     match port {
         Ok(mut port) => {
+            // Clone the port
+            let mut clone = port.try_clone().expect("Failed to clone");
+            // Send out 4 bytes every second
+            thread::spawn(move || loop {
+                for i in io::stdin().bytes() {
+                    clone
+                        .write_all(&[i.unwrap()])
+                        .expect("Failed to write to serial port");
+                }
+            });
+
             let mut serial_buf: Vec<u8> = vec![0; 1000];
             println!("Receiving data on {} at {} baud:", &cli.port, &cli.baud);
             loop {
