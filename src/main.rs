@@ -35,23 +35,16 @@ fn main() {
             // Clone the port
             let mut clone = port.try_clone().expect("Failed to clone");
             // Send out 4 bytes every second
-            thread::spawn(move || {
-                let mut buf: [u8; 1024] = [0; 1024];
-                loop {
-                    let n = io::stdin().read(&mut buf).unwrap();
-                    if n == 0 { // EOF
-                        std::process::exit(0);
-                    }
-                    for b in buf[..n].iter() {
-                        clone
-                            .write_all(&[*b])
-                            .expect("Failed to write to serial port");
-                    }
+            thread::spawn(move || loop {
+                for i in io::stdin().bytes() {
+                    clone
+                        .write_all(&[i.unwrap()])
+                        .expect("Failed to write to serial port");
                 }
             });
 
             let mut serial_buf: Vec<u8> = vec![0; 1000];
-            //eprintln!("Opening {} with {} baud", &cli.port, &cli.baud);
+            println!("Receiving data on {} at {} baud:", &cli.port, &cli.baud);
             loop {
                 match port.read(serial_buf.as_mut_slice()) {
                     Ok(t) => io::stdout().write_all(&serial_buf[..t]).unwrap(),
