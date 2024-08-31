@@ -1,6 +1,8 @@
+use std::{thread, time};
+use std::fs::File;
 use std::io::{self, Read, Write};
 use std::io::ErrorKind::NotFound;
-use std::{thread, time};
+use std::path::PathBuf;
 use std::time::Duration;
 
 use clap::Parser;
@@ -17,6 +19,10 @@ struct Cli {
     #[arg(short, long, default_value_t = 115_200)]
     baud: u32,
 
+    /// read form this file
+    #[clap(short, long)]
+    input_file: Option<PathBuf>,
+
     /// Wait up to 10 seconds for the serial port to appear
     #[arg(short, long, default_value_t = false)]
     wait: bool,
@@ -32,27 +38,37 @@ fn main() {
 
     match port {
         Ok(mut port) => {
-            // Clone the port
-            let mut clone = port.try_clone().expect("Failed to clone");
-            // Send out 4 bytes every second
-            thread::spawn(move || loop {
-                for i in io::stdin().bytes() {
-                    clone
-                        .write_all(&[i.unwrap()])
-                        .expect("Failed to write to serial port");
-                }
-            });
+            if let Some(path) = cli.input_file {
+                let mut file = File::open(&path).unwrap();
+                let mut buffer = Vec::new();
+                file.read_to_end(&mut buffer).unwrap();
+                port.write_all(&buffer).unwrap();
+                thread::sleep(Duration::from_millis(500));
+                eprintln!("Wrote {} to {} at {} baud", path.as_os_str().to_str().unwrap(), &cli.port, &cli.baud);
+            } else {
 
-            let mut serial_buf: Vec<u8> = vec![0; 1000];
-            println!("Receiving data on {} at {} baud:", &cli.port, &cli.baud);
-            loop {
-                match port.read(serial_buf.as_mut_slice()) {
-                    Ok(t) => io::stdout().write_all(&serial_buf[..t]).unwrap(),
-                    Err(ref e) if e.kind() == io::ErrorKind::TimedOut => (),
-                    Err(e) => {
-                        eprintln!("{:?}", e);
-                        std::process::exit(1);
-                    },
+                // Clone the port
+                let mut clone = port.try_clone().expect("Failed to clone");
+                // Send out 4 bytes every second
+                thread::spawn(move || loop {
+                    for i in io::stdin().bytes() {
+                        clone
+                            .write_all(&[i.unwrap()])
+                            .expect("Failed to write to serial port");
+                    }
+                });
+
+                let mut serial_buf: Vec<u8> = vec![0; 1000];
+                eprintln!("Opened {} at {} baud", &cli.port, &cli.baud);
+                loop {
+                    match port.read(serial_buf.as_mut_slice()) {
+                        Ok(t) => io::stdout().write_all(&serial_buf[..t]).unwrap(),
+                        Err(ref e) if e.kind() == io::ErrorKind::TimedOut => (),
+                        Err(e) => {
+                            eprintln!("{:?}", e);
+                            std::process::exit(1);
+                        }
+                    }
                 }
             }
         }
